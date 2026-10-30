@@ -37,8 +37,6 @@ const REEL_DURATION_MS = 4000;
 const REEL_ITEM_H = 80;
 const STORAGE_KEY = 'roulette-active-task';
 const NAME_KEY = 'roulette-player-name';
-const COMPLETED_TEX = 'roulette-completed-tex';
-const COMPLETED_NOTEX = 'roulette-completed-notex';
 
 /* ---------- Состояние ---------- */
 let categoryRotation = 0;
@@ -48,6 +46,10 @@ let activeTask = null;
 let timerInterval = null;
 let spinning = false;
 let playerName = localStorage.getItem(NAME_KEY);
+
+// Локальный кэш выполненных предметов (чтобы не дергать базу каждую секунду)
+let completedTex = [];
+let completedNotex = [];
 
 /* ---------- Утилиты ---------- */
 const $ = (id) => document.getElementById(id);
@@ -79,12 +81,9 @@ function weightedCategory() {
   return CATEGORY_NAMES[CATEGORY_NAMES.length - 1];
 }
 
-/* ---------- Leaderboard API (Firebase + Local Fallback) ---------- */
+/* ---------- Leaderboard API ---------- */
 async function fetchScores() {
-  if (!FIREBASE_URL) {
-    const lbKey = `roulette-lb-${getMonthKey()}`;
-    return JSON.parse(localStorage.getItem(lbKey) || '{}');
-  }
+  if (!FIREBASE_URL) return {};
   try {
     const res = await fetch(`${FIREBASE_URL}/scores/${getMonthKey()}.json`);
     return await res.json() || {};
@@ -92,34 +91,23 @@ async function fetchScores() {
 }
 
 async function updateScore(points) {
-  if (!playerName) return;
-  
-  if (!FIREBASE_URL) {
-    const lbKey = `roulette-lb-${getMonthKey()}`;
-    let scores = JSON.parse(localStorage.getItem(lbKey) || '{}');
-    scores[playerName] = (scores[playerName] || 0) + points;
-    localStorage.setItem(lbKey, JSON.stringify(scores));
-    $('my-score-val').textContent = scores[playerName];
+  if (!playerName || !FIREBASE_URL) return;
+  try {
+    const currentDB = await fetchScores();
+    const currentScore = currentDB[playerName] || 0;
+    await fetch(`${FIREBASE_URL}/scores/${getMonthKey()}/${playerName}.json`, {
+      method: 'PUT',
+      body: JSON.stringify(currentScore + points)
+    });
+    $('my-score-val').textContent = currentScore + points;
     loadLeaderboard();
-  } else {
-    try {
-      const currentDB = await fetchScores();
-      const currentScore = currentDB[playerName] || 0;
-      await fetch(`${FIREBASE_URL}/scores/${getMonthKey()}/${playerName}.json`, {
-        method: 'PUT',
-        body: JSON.stringify(currentScore + points)
-      });
-      $('my-score-val').textContent = currentScore + points;
-      loadLeaderboard();
-    } catch (e) { console.error('Failed to sync score', e); }
-  }
+  } catch (e) { console.error('Failed to sync score', e); }
 }
 
 async function loadLeaderboard() {
   $('current-month-label').textContent = monthKeyToLabel(getMonthKey());
   const scores = await fetchScores();
-  
-  if (!FIREBASE_URL && playerName) {
+  if (playerName) {
      $('my-score-val').textContent = scores[playerName] || 0;
   }
 
@@ -132,21 +120,59 @@ async function loadLeaderboard() {
   ).join('') || '<li>Пока пусто</li>';
 }
 
-/* ---------- Списки выполненных ---------- */
-function renderCompletedLists() {
-  const tex = JSON.parse(localStorage.getItem(COMPLETED_TEX) || '[]');
-  const notex = JSON.parse(localStorage.getItem(COMPLETED_NOTEX) || '[]');
-
-  $('completed-tex-list').innerHTML = tex.map(name => `<li>${escapeHtml(name)}</li>`).join('') || '<li style="color:#6b7280">Пусто</li>';
-  $('completed-notex-list').innerHTML = notex.map(name => `<li>${escapeHtml(name)}</li>`).join('') || '<li style="color:#6b7280">Пусто</li>';
+/* ---------- Списки выполненных (Firebase) ---------- */
+async function fetchCompleted() {
+  if (!FIREBASE_URL) return;
+  try {
+    const [resTex, resNotex] = await Promise.all([
+      fetch(`${FIREBASE_URL}/completed/tex.json`),
+      fetch(`${FIREBASE_URL}/completed/notex.json`)
+    ]);
+    const texData = await resTex.json() || {};
+    const notexData = await resNotex.json() || {};
+    
+    // Преобразуем объект {"Имя предмета": true} в массив строк
+    completedTex = Object.keys(texData);
+    completedNotex = Object.keys(notexData);
+  } catch (e) {
+    console.error('Error fetching completed:', e);
+  }
 }
 
-function resetCompleted() {
-  if (confirm('Вы уверены? Все выполненные предметы вернутся в пул.')) {
-    localStorage.removeItem(COMPLETED_TEX);
-    localStorage.removeItem(COMPLETED_NOTEX);
-    renderCompletedLists();
+async function markCompleted(itemName, noTexture) {
+  if (!FIREBASE_URL) return;
+  const path = noTexture ? 'notex' : 'tex';
+  try {
+    // Используем имя предмета как ключ, чтобы избежать дубликатов
+    await fetch(`${FIREBASE_URL}/completed/${path}/${encodeURIComponent(itemName)}.json`, {
+      method: 'PUT',
+      body: JSON.stringify(true)
+    });
+  } catch (e) {
+    console.error('Failed to mark completed:', e);
   }
+}
+
+async function resetCompleted() {
+  if (!confirm('Вы уверены? Все выполненные предметы вернутся в пул (для всех участников).')) return;
+  if (!FIREBASE_URL) return;
+  
+  try {
+    await Promise.all([
+      fetch(`${FIREBASE_URL}/completed/tex.json`, { method: 'DELETE' }),
+      fetch(`${FIREBASE_URL}/completed/notex.json`, { method: 'DELETE' })
+    ]);
+    completedTex = [];
+    completedNotex = [];
+    renderCompletedLists();
+  } catch (e) {
+    alert('Ошибка при сбросе списков');
+  }
+}
+
+function renderCompletedLists() {
+  $('completed-tex-list').innerHTML = completedTex.map(name => `<li>${escapeHtml(name)}</li>`).join('') || '<li style="color:#6b7280">Пусто</li>';
+  $('completed-notex-list').innerHTML = completedNotex.map(name => `<li>${escapeHtml(name)}</li>`).join('') || '<li style="color:#6b7280">Пусто</li>';
 }
 
 /* ---------- Колесо ---------- */
@@ -208,6 +234,9 @@ function spinCategory() {
 
 /* ---------- Вторая рулетка ---------- */
 async function getItems(category) {
+  // Перед выбором предметов обновляем списки из базы (вдруг друг что-то сделал)
+  await fetchCompleted();
+
   const cfg = CATEGORIES[category];
   let items = [];
   
@@ -221,9 +250,7 @@ async function getItems(category) {
     items = names.map(name => ({ name, isColor: false }));
   }
 
-  const completedTex = JSON.parse(localStorage.getItem(COMPLETED_TEX) || '[]');
-  const completedNotex = JSON.parse(localStorage.getItem(COMPLETED_NOTEX) || '[]');
-  
+  // Фильтруем уже выполненные
   return items.filter(item => 
     !completedTex.includes(item.name) && !completedNotex.includes(item.name)
   );
@@ -390,21 +417,22 @@ function saveActiveTask(task) {
   else localStorage.setItem(STORAGE_KEY, JSON.stringify(task));
 }
 
-function completeTask(noTexture = false) {
+async function completeTask(noTexture = false) {
   if (!activeTask) return;
   const cat = CATEGORIES[activeTask.category];
   const points = noTexture ? cat.noTexPoints : cat.points;
 
-  const key = noTexture ? COMPLETED_NOTEX : COMPLETED_TEX;
-  const list = JSON.parse(localStorage.getItem(key) || '[]');
-  if (!list.includes(activeTask.itemData.name)) {
-    list.push(activeTask.itemData.name);
-    localStorage.setItem(key, JSON.stringify(list));
-  }
-
-  updateScore(points);
+  // 1. Сохраняем в Firebase
+  await markCompleted(activeTask.itemData.name, noTexture);
+  
+  // 2. Обновляем локальный кэш и UI
+  await fetchCompleted();
   renderCompletedLists();
-  alert(`✓ Отлично! Вы получаете +${points} балл(ов).`);
+
+  // 3. Начисляем очки
+  updateScore(points);
+  
+  alert(`✓ Отлично! Вы получаете +${points} балл(ов).\nМодель добавлена в общий список выполненных.`);
   resetRoulette();
 }
 
@@ -438,6 +466,9 @@ async function init() {
     }
 
     buildCategoryWheel();
+    
+    // Загружаем выполненные из базы при старте
+    await fetchCompleted();
     renderCompletedLists();
     
     $('spin-category').addEventListener('click', spinCategory);
@@ -447,7 +478,6 @@ async function init() {
     $('reroll-btn').addEventListener('click', rerollTask);
     $('reset-completed-btn').addEventListener('click', resetCompleted);
 
-    // Оборачиваем в try-catch, чтобы проблемы с Firebase не ломали инициализацию
     try {
       await loadLeaderboard();
     } catch (e) {

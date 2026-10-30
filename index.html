@@ -10,7 +10,7 @@
   <div class="app">
     <header>
       <h1>🎲 Model Roulette</h1>
-      <p>Крути категорию, потом предмет. На модель — 12 часов.</p>
+      <p>Крути категорию, потом предмет. На модель — 12 или 24 часа.</p>
     </header>
 
     <!-- ЭТАП 1: колесо категорий -->
@@ -44,12 +44,13 @@
         <div class="result-rare hidden" id="result-rare">✨ РЕДКИЙ ДРОП ✨</div>
         <div class="result-category" id="result-category"></div>
         <div class="result-item" id="result-item"></div>
-        <div class="timer" id="timer">12:00:00</div>
+        <div class="timer" id="timer">00:00:00</div>
         <div class="timer-label" id="timer-label">до дедлайна</div>
       </div>
       
       <div class="result-actions">
-        <button class="spin-btn" id="done-btn">✓ ГОТОВО</button>
+        <button class="spin-btn" id="done-btn">✓ ГОТОВО (С ТЕКСТУРАМИ)</button>
+        <button class="spin-btn secondary" id="done-notex-btn">✓ ГОТОВО (БЕЗ ТЕКСТУР)</button>
         <button class="spin-btn reroll-btn hidden" id="reroll-btn">ОБСУДИТЬ / ПЕРЕКРУТИТЬ</button>
       </div>
     </section>

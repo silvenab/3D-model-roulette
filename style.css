@@ -37,12 +37,17 @@ header p { color: #9ca3af; font-size: 0.9rem; }
   background: radial-gradient(circle at 50% 30%, rgba(255,255,255,0.18), transparent 55%);
   pointer-events: none; z-index: 1;
 }
-.wheel-label {
-  position: absolute; inset: 0; display: flex; justify-content: center; padding-top: 45px; pointer-events: none; z-index: 2;
+
+/* Новый способ позиционирования иконок (без вращения) */
+.wheel-icon {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 1.8rem; 
+  text-shadow: 0 2px 6px rgba(0,0,0,0.8);
+  pointer-events: none; 
+  z-index: 2;
 }
-.wheel-emoji {
-  font-size: 1.8rem; text-shadow: 0 2px 4px rgba(0,0,0,0.6);
-}
+
 .pointer {
   position: absolute; top: -14px; left: 50%; transform: translateX(-50%);
   width: 0; height: 0; border-left: 14px solid transparent; border-right: 14px solid transparent; border-top: 26px solid #fff;

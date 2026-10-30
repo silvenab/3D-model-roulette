@@ -28,7 +28,11 @@
     <section class="stage hidden" id="stage-item">
       <div class="category-badge" id="current-category">—</div>
       <div class="reel-viewport">
-        <div class="reel-track" id="reel-track"></div>
+        <div class="reel-track" id="reel-track">
+          <div class="reel-item">- - -</div>
+          <div class="reel-item">ЖМИ КРУТИТЬ</div>
+          <div class="reel-item">- - -</div>
+        </div>
         <div class="reel-highlight"></div>
       </div>
       <button class="spin-btn" id="spin-item">КРУТИТЬ</button>
@@ -43,21 +47,23 @@
         <div class="timer" id="timer">12:00:00</div>
         <div class="timer-label" id="timer-label">до дедлайна</div>
       </div>
-      <button class="spin-btn" id="done-btn">✓ ГОТОВО</button>
-      <button class="spin-btn secondary" id="restart-btn">НОВЫЙ СПИН</button>
+      
+      <div class="result-actions">
+        <button class="spin-btn" id="done-btn">✓ ГОТОВО</button>
+        <button class="spin-btn reroll-btn hidden" id="reroll-btn">ОБСУДИТЬ / ПЕРЕКРУТИТЬ</button>
+      </div>
     </section>
 
-    <!-- Лидерборд текущего месяца -->
+    <!-- Лидерборд -->
     <section class="leaderboard">
-      <h2>🏆 Лидерборд — <span id="current-month-label">—</span></h2>
-      <ul id="leaderboard-list"></ul>
+      <div class="lb-header">
+        <h2>🏆 Лидерборд — <span id="current-month-label">—</span></h2>
+        <div class="my-score">Мой счет: <span id="my-score-val">0</span></div>
+      </div>
+      <ul id="leaderboard-list">
+        <li>Загрузка...</li>
+      </ul>
     </section>
-
-    <!-- Архив прошлых месяцев -->
-    <details class="leaderboard history-section">
-      <summary>📚 Архив прошлых месяцев</summary>
-      <div id="history-list"></div>
-    </details>
   </div>
   <script src="app.js"></script>
 </body>

@@ -3,18 +3,54 @@
 */
 const FIREBASE_URL = "https://d-model-roulette-default-rtdb.europe-west1.firebasedatabase.app"; 
 
-/* ---------- Конфигурация ---------- */
+/* =========================================================================
+   ⚙️ ГЛАВНАЯ НАСТРОЙКА КАТЕГОРИЙ И ТАЙМЕРОВ
+   =========================================================================
+   timer:   Время до дедлайна в ЧАСАХ (сколько всего дается на модель)
+   minTime: Минимальное время в МИНУТАХ (сколько должно пройти, чтобы 
+            разблокировались кнопки "ГОТОВО")
+   points:  Баллы за модель с текстурами
+   noTexPoints: Баллы за модель без текстур
+   ========================================================================= */
 const CATEGORIES = {
-  'Строения':      { color: '#ff7a45', weight: 50,  emoji: '🏚️', rare: true, points: 6, noTexPoints: 3, minTime: 30, timer: 12, colors: {
-      'Белый': '#f8fafc', 'Бежевый': '#e8d5b7', 'Песочный': '#d4b896', 'Терракотовый': '#b8694a',
-      'Красный': '#b91c1c', 'Коричневый': '#7c4a2d', 'Серый': '#64748b', 'Тёмно-серый': '#334155',
-      'Синий': '#1e40af', 'Зелёный': '#166534',
-  }},
-  'Природа':       { color: '#4ade80', weight: 150, emoji: '🌿', file: 'data/nature.json', points: 2, noTexPoints: 1, minTime: 5, timer: 12 },
-  'Предметы':      { color: '#60a5fa', weight: 499, emoji: '📦', file: 'data/items.json', points: 2, noTexPoints: 1, minTime: 5, timer: 12 },
-  'Интерактивное': { color: '#c084fc', weight: 1,   emoji: '⚡', file: 'data/interactive.json', points: 20, noTexPoints: 20, minTime: 60, timer: 24 },
-  'Пропы':         { color: '#fbbf24', weight: 300, emoji: '🪑', file: 'data/props.json', points: 2, noTexPoints: 1, minTime: 5, timer: 12 },
+  'Строения':      { color: '#ff7a45', weight: 50,  emoji: '🏚️', rare: true, 
+      points: 6, 
+      noTexPoints: 3, 
+      minTime: 30,  // <--- Минимум 30 минут
+      timer: 12,    // <--- Дедлайн 12 часов
+      colors: {
+        'Белый': '#f8fafc', 'Бежевый': '#e8d5b7', 'Песочный': '#d4b896', 'Терракотовый': '#b8694a',
+        'Красный': '#b91c1c', 'Коричневый': '#7c4a2d', 'Серый': '#64748b', 'Тёмно-серый': '#334155',
+        'Синий': '#1e40af', 'Зелёный': '#166534',
+      }
+  },
+  'Природа':       { color: '#4ade80', weight: 150, emoji: '🌿', file: 'data/nature.json', 
+      points: 2, 
+      noTexPoints: 1, 
+      minTime: 5,   // <--- Минимум 5 минут
+      timer: 12     // <--- Дедлайн 12 часов
+  },
+  'Предметы':      { color: '#60a5fa', weight: 499, emoji: '📦', file: 'data/items.json', 
+      points: 2, 
+      noTexPoints: 1, 
+      minTime: 5,   // <--- Минимум 5 минут
+      timer: 12     // <--- Дедлайн 12 часов
+  },
+  'Интерактивное': { color: '#c084fc', weight: 1,   emoji: '⚡', file: 'data/interactive.json', 
+      points: 20, 
+      noTexPoints: 20, 
+      minTime: 60,  // <--- Минимум 60 минут (1 час)
+      timer: 24     // <--- Дедлайн 24 часа
+  },
+  'Пропы':         { color: '#fbbf24', weight: 300, emoji: '🪑', file: 'data/props.json', 
+      points: 2, 
+      noTexPoints: 1, 
+      minTime: 5,   // <--- Минимум 5 минут
+      timer: 12     // <--- Дедлайн 12 часов
+  },
 };
+/* ========================================================================= */
+
 const CATEGORY_NAMES = Object.keys(CATEGORIES);
 const WEIGHT_TOTAL = CATEGORY_NAMES.reduce((s, n) => s + CATEGORIES[n].weight, 0);
 
@@ -24,6 +60,8 @@ const REEL_DURATION_MS = 4000;
 const REEL_ITEM_H = 80;
 const STORAGE_KEY = 'roulette-active-task';
 const NAME_KEY = 'roulette-player-name';
+const COMPLETED_TEX = 'roulette-completed-tex';
+const COMPLETED_NOTEX = 'roulette-completed-notex';
 
 /* ---------- Состояние ---------- */
 let categoryRotation = 0;
@@ -117,6 +155,23 @@ async function loadLeaderboard() {
   ).join('') || '<li>Пока пусто</li>';
 }
 
+/* ---------- Списки выполненных ---------- */
+function renderCompletedLists() {
+  const tex = JSON.parse(localStorage.getItem(COMPLETED_TEX) || '[]');
+  const notex = JSON.parse(localStorage.getItem(COMPLETED_NOTEX) || '[]');
+
+  $('completed-tex-list').innerHTML = tex.map(name => `<li>${escapeHtml(name)}</li>`).join('') || '<li style="color:#6b7280">Пусто</li>';
+  $('completed-notex-list').innerHTML = notex.map(name => `<li>${escapeHtml(name)}</li>`).join('') || '<li style="color:#6b7280">Пусто</li>';
+}
+
+function resetCompleted() {
+  if (confirm('Вы уверены? Все выполненные предметы вернутся в пул.')) {
+    localStorage.removeItem(COMPLETED_TEX);
+    localStorage.removeItem(COMPLETED_NOTEX);
+    renderCompletedLists();
+  }
+}
+
 /* ---------- Колесо ---------- */
 function buildCategoryWheel() {
   const wheel = $('category-wheel');
@@ -134,25 +189,6 @@ function buildCategoryWheel() {
     acc = end;
   });
   wheel.style.background = `conic-gradient(from 0deg, ${stops.join(', ')})`;
-
-  // Математически точное позиционирование иконок
-  const radiusPercent = 36; // Радиус от центра колеса (36% от ширины)
-  
-  CATEGORY_NAMES.forEach(name => {
-    const s = categorySectors[name];
-    if (s.span > 15) { // Показываем иконку, если сектор достаточно широкий
-      const angleRad = (s.center - 90) * Math.PI / 180; // -90, чтобы 0 градусов был сверху
-      const x = 50 + radiusPercent * Math.cos(angleRad);
-      const y = 50 + radiusPercent * Math.sin(angleRad);
-      
-      const icon = document.createElement('div');
-      icon.className = 'wheel-icon';
-      icon.style.left = `${x}%`;
-      icon.style.top = `${y}%`;
-      icon.textContent = CATEGORIES[name].emoji;
-      wheel.appendChild(icon);
-    }
-  });
 
   $('legend').innerHTML = CATEGORY_NAMES.map(name => {
     const pct = (CATEGORIES[name].weight / WEIGHT_TOTAL * 100).toFixed(1);
@@ -196,13 +232,25 @@ function spinCategory() {
 /* ---------- Вторая рулетка ---------- */
 async function getItems(category) {
   const cfg = CATEGORIES[category];
+  let items = [];
+  
   if (cfg.colors) {
-    return Object.entries(cfg.colors).map(([name, hex]) => ({ name, hex, isColor: true }));
+    items = Object.entries(cfg.colors).map(([name, hex]) => ({ name, hex, isColor: true }));
+  } else {
+    const res = await fetch(cfg.file + '?t=' + Date.now());
+    if (!res.ok) throw new Error(`Ошибка загрузки`);
+    const data = await res.json();
+    const names = (Array.isArray(data) ? data : (data.items || []));
+    items = names.map(name => ({ name, isColor: false }));
   }
-  const res = await fetch(cfg.file + '?t=' + Date.now());
-  if (!res.ok) throw new Error(`Ошибка загрузки`);
-  const data = await res.json();
-  return (Array.isArray(data) ? data : (data.items || [])).map(name => ({ name, isColor: false }));
+
+  // Фильтруем уже выполненные
+  const completedTex = JSON.parse(localStorage.getItem(COMPLETED_TEX) || '[]');
+  const completedNotex = JSON.parse(localStorage.getItem(COMPLETED_NOTEX) || '[]');
+  
+  return items.filter(item => 
+    !completedTex.includes(item.name) && !completedNotex.includes(item.name)
+  );
 }
 
 function renderItem(item) {
@@ -220,6 +268,13 @@ async function spinItem() {
     items = await getItems(selectedCategory);
   } catch (e) {
     alert(e.message);
+    spinning = false;
+    $('spin-item').disabled = false;
+    return;
+  }
+
+  if (items.length === 0) {
+    alert('В этой категории больше не осталось доступных предметов! (Все сделаны)');
     spinning = false;
     $('spin-item').disabled = false;
     return;
@@ -288,6 +343,7 @@ function showResultStage() {
   timerInterval = setInterval(updateTimerDisplay, 1000);
 }
 
+/* ---------- ЛОГИКА ТАЙМЕРА И КНОПОК ---------- */
 function updateTimerDisplay() {
   const timerEl = $('timer');
   const labelEl = $('timer-label');
@@ -298,9 +354,12 @@ function updateTimerDisplay() {
   const elapsed = now - activeTask.startTime;
   
   const catCfg = CATEGORIES[activeTask.category];
-  const minMs = (catCfg.minTime || 0) * 60 * 1000; // Время в минутах
+  
+  // Перевод минут в миллисекунды для проверки minTime
+  const minMs = (catCfg.minTime || 0) * 60 * 1000; 
   const isReady = elapsed >= minMs;
 
+  // Блокируем кнопки, пока не прошло minTime
   $('done-btn').disabled = !isReady;
   $('done-notex-btn').disabled = !isReady;
 
@@ -315,6 +374,7 @@ function updateTimerDisplay() {
 
   timerEl.classList.remove('warning', 'danger', 'expired');
 
+  // Если вышло общее время (timer)
   if (remaining <= 0) {
     timerEl.textContent = '00:00:00';
     timerEl.classList.add('expired');
@@ -343,6 +403,7 @@ function updateTimerDisplay() {
 
 /* ---------- Задача ---------- */
 function startTask(category, itemData) {
+  // Перевод часов в миллисекунды для дедлайна
   const hours = CATEGORIES[category].timer || 12;
   activeTask = { 
     category, 
@@ -365,19 +426,16 @@ function completeTask(noTexture = false) {
   const cat = CATEGORIES[activeTask.category];
   const points = noTexture ? cat.noTexPoints : cat.points;
 
-  if (noTexture) {
-    const key = `roulette-notex-${getMonthKey()}`;
-    const list = JSON.parse(localStorage.getItem(key) || '[]');
-    list.push({
-      date: new Date().toISOString(),
-      category: activeTask.category,
-      item: activeTask.itemData.name,
-      player: playerName
-    });
+  // Добавляем в списки выполненных
+  const key = noTexture ? COMPLETED_NOTEX : COMPLETED_TEX;
+  const list = JSON.parse(localStorage.getItem(key) || '[]');
+  if (!list.includes(activeTask.itemData.name)) {
+    list.push(activeTask.itemData.name);
     localStorage.setItem(key, JSON.stringify(list));
   }
 
   updateScore(points);
+  renderCompletedLists(); // Обновляем UI списков
   alert(`✓ Отлично! Вы получаете +${points} балл(ов).`);
   resetRoulette();
 }
@@ -411,11 +469,14 @@ async function init() {
   }
 
   buildCategoryWheel();
+  renderCompletedLists();
+  
   $('spin-category').addEventListener('click', spinCategory);
   $('spin-item').addEventListener('click', spinItem);
   $('done-btn').addEventListener('click', () => completeTask(false));
   $('done-notex-btn').addEventListener('click', () => completeTask(true));
   $('reroll-btn').addEventListener('click', rerollTask);
+  $('reset-completed-btn').addEventListener('click', resetCompleted);
 
   await loadLeaderboard();
 

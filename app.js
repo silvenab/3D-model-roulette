@@ -1,6 +1,4 @@
-/* ---------- НАСТРОЙКА FIREBASE ---------- 
-   Вставь сюда URL твоей базы данных (без слэша в конце). 
-*/
+/* ---------- НАСТРОЙКА FIREBASE ---------- */
 const FIREBASE_URL = "https://d-model-roulette-default-rtdb.europe-west1.firebasedatabase.app"; 
 
 /* =========================================================================
@@ -47,9 +45,13 @@ let timerInterval = null;
 let spinning = false;
 let playerName = localStorage.getItem(NAME_KEY);
 
-// Локальный кэш выполненных предметов (чтобы не дергать базу каждую секунду)
+// Глобальные списки (синхронизируются с Firebase)
 let completedTex = [];
 let completedNotex = [];
+let completedTrash = [];
+
+// Кулдаун удаления
+let deleteCooldownUntil = parseInt(localStorage.getItem('roulette-delete-cd') || '0', 10);
 
 /* ---------- Утилиты ---------- */
 const $ = (id) => document.getElementById(id);
@@ -120,22 +122,21 @@ async function loadLeaderboard() {
   ).join('') || '<li>Пока пусто</li>';
 }
 
-/* ---------- Списки выполненных (Firebase) ---------- */
+/* ---------- Списки выполненных и мусор (Firebase) ---------- */
 async function fetchCompleted() {
   if (!FIREBASE_URL) return;
   try {
-    const [resTex, resNotex] = await Promise.all([
+    const [resTex, resNotex, resTrash] = await Promise.all([
       fetch(`${FIREBASE_URL}/completed/tex.json`),
-      fetch(`${FIREBASE_URL}/completed/notex.json`)
+      fetch(`${FIREBASE_URL}/completed/notex.json`),
+      fetch(`${FIREBASE_URL}/completed/trash.json`)
     ]);
-    const texData = await resTex.json() || {};
-    const notexData = await resNotex.json() || {};
     
-    // Преобразуем объект {"Имя предмета": true} в массив строк
-    completedTex = Object.keys(texData);
-    completedNotex = Object.keys(notexData);
+    completedTex = Object.keys(await resTex.json() || {});
+    completedNotex = Object.keys(await resNotex.json() || {});
+    completedTrash = Object.keys(await resTrash.json() || {});
   } catch (e) {
-    console.error('Error fetching completed:', e);
+    console.error('Error fetching lists:', e);
   }
 }
 
@@ -143,27 +144,32 @@ async function markCompleted(itemName, noTexture) {
   if (!FIREBASE_URL) return;
   const path = noTexture ? 'notex' : 'tex';
   try {
-    // Используем имя предмета как ключ, чтобы избежать дубликатов
     await fetch(`${FIREBASE_URL}/completed/${path}/${encodeURIComponent(itemName)}.json`, {
-      method: 'PUT',
-      body: JSON.stringify(true)
+      method: 'PUT', body: JSON.stringify(true)
     });
-  } catch (e) {
-    console.error('Failed to mark completed:', e);
-  }
+  } catch (e) { console.error('Failed to mark completed:', e); }
+}
+
+async function markTrash(itemName) {
+  if (!FIREBASE_URL) return;
+  try {
+    await fetch(`${FIREBASE_URL}/completed/trash/${encodeURIComponent(itemName)}.json`, {
+      method: 'PUT', body: JSON.stringify(true)
+    });
+  } catch (e) { console.error('Failed to mark trash:', e); }
 }
 
 async function resetCompleted() {
-  if (!confirm('Вы уверены? Все выполненные предметы вернутся в пул (для всех участников).')) return;
+  if (!confirm('Вы уверены? Все выполненные и удаленные предметы вернутся в пул (для всех участников).')) return;
   if (!FIREBASE_URL) return;
   
   try {
     await Promise.all([
       fetch(`${FIREBASE_URL}/completed/tex.json`, { method: 'DELETE' }),
-      fetch(`${FIREBASE_URL}/completed/notex.json`, { method: 'DELETE' })
+      fetch(`${FIREBASE_URL}/completed/notex.json`, { method: 'DELETE' }),
+      fetch(`${FIREBASE_URL}/completed/trash.json`, { method: 'DELETE' })
     ]);
-    completedTex = [];
-    completedNotex = [];
+    completedTex = []; completedNotex = []; completedTrash = [];
     renderCompletedLists();
   } catch (e) {
     alert('Ошибка при сбросе списков');
@@ -234,8 +240,7 @@ function spinCategory() {
 
 /* ---------- Вторая рулетка ---------- */
 async function getItems(category) {
-  // Перед выбором предметов обновляем списки из базы (вдруг друг что-то сделал)
-  await fetchCompleted();
+  await fetchCompleted(); // Обновляем списки перед выбором
 
   const cfg = CATEGORIES[category];
   let items = [];
@@ -250,9 +255,11 @@ async function getItems(category) {
     items = names.map(name => ({ name, isColor: false }));
   }
 
-  // Фильтруем уже выполненные
+  // Фильтруем выполненные и удаленные в мусор
   return items.filter(item => 
-    !completedTex.includes(item.name) && !completedNotex.includes(item.name)
+    !completedTex.includes(item.name) && 
+    !completedNotex.includes(item.name) &&
+    !completedTrash.includes(item.name)
   );
 }
 
@@ -270,7 +277,7 @@ async function spinItem() {
     let items = await getItems(selectedCategory);
 
     if (items.length === 0) {
-      alert('В этой категории больше не осталось доступных предметов! (Все сделаны)');
+      alert('В этой категории больше не осталось доступных предметов! (Все сделаны или удалены)');
       spinning = false;
       $('spin-item').disabled = false;
       return;
@@ -311,6 +318,7 @@ async function spinItem() {
 /* ---------- Этапы ---------- */
 function showItemStage() {
   $('stage-category').classList.add('hidden');
+  $('stage-result').classList.add('hidden');
   $('stage-item').classList.remove('hidden');
   const badge = $('current-category');
   badge.textContent = selectedCategory;
@@ -370,6 +378,17 @@ function updateTimerDisplay() {
     $('done-notex-btn').textContent = `✓ ГОТОВО (БЕЗ ТЕКСТУР)`;
   }
 
+  // Кулдаун кнопки удаления
+  const delBtn = $('delete-btn');
+  if (Date.now() < deleteCooldownUntil) {
+    const cdLeft = Math.ceil((deleteCooldownUntil - Date.now()) / 1000);
+    delBtn.disabled = true;
+    delBtn.textContent = `ЖДИТЕ ${cdLeft}с`;
+  } else {
+    delBtn.disabled = false;
+    delBtn.textContent = `🗑️ УДАЛИТЬ (В МУСОР)`;
+  }
+
   timerEl.classList.remove('warning', 'danger', 'expired');
 
   if (remaining <= 0) {
@@ -379,6 +398,7 @@ function updateTimerDisplay() {
     $('done-btn').disabled = true;
     $('done-notex-btn').disabled = true;
     $('reroll-btn').classList.add('hidden');
+    delBtn.disabled = true;
     
     if (!activeTask.expired) {
       activeTask.expired = true;
@@ -422,18 +442,38 @@ async function completeTask(noTexture = false) {
   const cat = CATEGORIES[activeTask.category];
   const points = noTexture ? cat.noTexPoints : cat.points;
 
-  // 1. Сохраняем в Firebase
   await markCompleted(activeTask.itemData.name, noTexture);
-  
-  // 2. Обновляем локальный кэш и UI
   await fetchCompleted();
   renderCompletedLists();
 
-  // 3. Начисляем очки
   updateScore(points);
-  
   alert(`✓ Отлично! Вы получаете +${points} балл(ов).\nМодель добавлена в общий список выполненных.`);
   resetRoulette();
+}
+
+async function deleteTask() {
+  if (!activeTask || Date.now() < deleteCooldownUntil) return;
+
+  const itemName = activeTask.itemData.name;
+  const cat = activeTask.category;
+
+  // 1. Отправляем в Firebase (в скрытый список)
+  await markTrash(itemName);
+  
+  // 2. Ставим кулдаун на 30 секунд
+  deleteCooldownUntil = Date.now() + 30000;
+  localStorage.setItem('roulette-delete-cd', deleteCooldownUntil);
+
+  // 3. Очищаем текущую задачу и переходим на реролл
+  activeTask = null;
+  localStorage.removeItem(STORAGE_KEY);
+  if (timerInterval) clearInterval(timerInterval);
+
+  selectedCategory = cat;
+  showItemStage();
+  
+  // 4. Запускаем спин
+  spinItem();
 }
 
 function rerollTask() {
@@ -466,8 +506,6 @@ async function init() {
     }
 
     buildCategoryWheel();
-    
-    // Загружаем выполненные из базы при старте
     await fetchCompleted();
     renderCompletedLists();
     
@@ -476,6 +514,7 @@ async function init() {
     $('done-btn').addEventListener('click', () => completeTask(false));
     $('done-notex-btn').addEventListener('click', () => completeTask(true));
     $('reroll-btn').addEventListener('click', rerollTask);
+    $('delete-btn').addEventListener('click', deleteTask);
     $('reset-completed-btn').addEventListener('click', resetCompleted);
 
     try {

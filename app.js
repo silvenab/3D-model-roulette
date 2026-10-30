@@ -2,7 +2,7 @@
    Вставь сюда URL твоей базы данных (без слэша в конце). 
    Если оставить пустым, лидерборд будет работать только локально в твоем браузере.
 */
-const FIREBASE_URL = ""; // Пример: "https://my-project-default-rtdb.firebaseio.com"
+const FIREBASE_URL = "https://d-model-roulette-default-rtdb.europe-west1.firebasedatabase.app/"; // Пример: "https://my-project-default-rtdb.firebaseio.com"
 
 /* ---------- Конфигурация ---------- */
 const CATEGORIES = {

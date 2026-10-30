@@ -1,8 +1,7 @@
 /* ---------- НАСТРОЙКА FIREBASE ---------- 
    Вставь сюда URL твоей базы данных (без слэша в конце). 
-   Пример: "https://my-project-default-rtdb.firebaseio.com"
 */
-const FIREBASE_URL = "https://d-model-roulette-default-rtdb.europe-west1.firebasedatabase.app/"; 
+const FIREBASE_URL = "https://d-model-roulette-default-rtdb.europe-west1.firebasedatabase.app"; 
 
 /* ---------- Конфигурация ---------- */
 const CATEGORIES = {
@@ -136,21 +135,17 @@ function buildCategoryWheel() {
   });
   wheel.style.background = `conic-gradient(from 0deg, ${stops.join(', ')})`;
 
-  // Вместо CSS rotate используем математику для точного позиционирования
-  const radiusPercent = 38; // 38% от радиуса колеса
+  // Позиционирование иконок через transform (надёжнее, чем left/top)
+  const radiusPercent = 36; // Отступ от центра
   
   CATEGORY_NAMES.forEach(name => {
     const s = categorySectors[name];
     // Показываем иконку, если сектор достаточно широкий (чтобы не наезжали друг на друга)
-    if (s.span > 20) {
-      const angleRad = (s.center - 90) * Math.PI / 180;
-      const x = 50 + radiusPercent * Math.cos(angleRad);
-      const y = 50 + radiusPercent * Math.sin(angleRad);
-      
+    if (s.span > 15) {
       const icon = document.createElement('div');
       icon.className = 'wheel-icon';
-      icon.style.left = `${x}%`;
-      icon.style.top = `${y}%`;
+      // Поворачиваем на угол сектора, сдвигаем от центра и возвращаем ориентацию
+      icon.style.transform = `rotate(${s.center}deg) translateY(-${radiusPercent}%) rotate(${-s.center}deg)`;
       icon.textContent = CATEGORIES[name].emoji;
       wheel.appendChild(icon);
     }
@@ -300,7 +295,7 @@ function updateTimerDisplay() {
   const elapsed = now - activeTask.startTime;
   
   const catCfg = CATEGORIES[activeTask.category];
-  const minMs = (catCfg.minTime || 0) * 60 * 1000; // Время в минутах переводим в миллисекунды
+  const minMs = (catCfg.minTime || 0) * 60 * 1000; // Время в минутах
   const isReady = elapsed >= minMs;
 
   $('done-btn').disabled = !isReady;

@@ -1,64 +1,49 @@
+/* ---------- НАСТРОЙКА FIREBASE ---------- 
+   Вставь сюда URL твоей базы данных (без слэша в конце). 
+   Если оставить пустым, лидерборд будет работать только локально в твоем браузере.
+*/
+const FIREBASE_URL = ""; // Пример: "https://my-project-default-rtdb.firebaseio.com"
+
 /* ---------- Конфигурация ---------- */
 const CATEGORIES = {
-  'Строения': {
-    color: '#ff7a45',
-    weight: 5,          // ← сильно меньше остальных
-    emoji: '🏚️',
-    rare: true,
-    colors: {
-      'Белый':        '#f8fafc',
-      'Бежевый':      '#e8d5b7',
-      'Песочный':     '#d4b896',
-      'Терракотовый': '#b8694a',
-      'Красный':      '#b91c1c',
-      'Коричневый':   '#7c4a2d',
-      'Серый':        '#64748b',
-      'Тёмно-серый':  '#334155',
-      'Синий':        '#1e40af',
-      'Зелёный':      '#166534',
-    },
-  },
-  'Природа':       { color: '#4ade80', weight: 25, file: 'data/nature.json' },
-  'Предметы':      { color: '#60a5fa', weight: 25, file: 'data/items.json' },
-  'Интерактивное': { color: '#c084fc', weight: 25, file: 'data/interactive.json' },
-  'Пропы':         { color: '#fbbf24', weight: 25, file: 'data/props.json' },
+  'Строения':      { color: '#ff7a45', weight: 50,  emoji: '🏚️', rare: true, points: 5, colors: {
+      'Белый': '#f8fafc', 'Бежевый': '#e8d5b7', 'Песочный': '#d4b896', 'Терракотовый': '#b8694a',
+      'Красный': '#b91c1c', 'Коричневый': '#7c4a2d', 'Серый': '#64748b', 'Тёмно-серый': '#334155',
+      'Синий': '#1e40af', 'Зелёный': '#166534',
+  }},
+  'Природа':       { color: '#4ade80', weight: 150, emoji: '🌿', file: 'data/nature.json', points: 1 },
+  'Предметы':      { color: '#60a5fa', weight: 499, emoji: '📦', file: 'data/items.json', points: 1 },
+  'Интерактивное': { color: '#c084fc', weight: 1,   emoji: '⚡', file: 'data/interactive.json', points: 20 },
+  'Пропы':         { color: '#fbbf24', weight: 300, emoji: '🪑', file: 'data/props.json', points: 1 },
 };
 const CATEGORY_NAMES = Object.keys(CATEGORIES);
-const WEIGHT_TOTAL   = CATEGORY_NAMES.reduce((s, n) => s + CATEGORIES[n].weight, 0);
+const WEIGHT_TOTAL = CATEGORY_NAMES.reduce((s, n) => s + CATEGORIES[n].weight, 0);
 
-const MONTH_NAMES = [
-  'январь','февраль','март','апрель','май','июнь',
-  'июль','август','сентябрь','октябрь','ноябрь','декабрь'
-];
-
-const DEADLINE_MS      = 12 * 60 * 60 * 1000;
+const MONTH_NAMES = ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
+const DEADLINE_MS = 12 * 60 * 60 * 1000;
 const SPIN_DURATION_MS = 5000;
 const REEL_DURATION_MS = 4000;
-const REEL_ITEM_H      = 80;
-const STORAGE_KEY      = 'roulette-active-task';
-const SCORE_KEY        = 'roulette-my-score';
+const REEL_ITEM_H = 80;
+const STORAGE_KEY = 'roulette-active-task';
+const NAME_KEY = 'roulette-player-name';
 
 /* ---------- Состояние ---------- */
 let categoryRotation = 0;
-let categorySectors  = {};
+let categorySectors = {};
 let selectedCategory = null;
-let activeTask       = null;
-let timerInterval    = null;
-let spinning         = false;
+let activeTask = null;
+let timerInterval = null;
+let spinning = false;
+let playerName = localStorage.getItem(NAME_KEY);
 
 /* ---------- Утилиты ---------- */
 const $ = (id) => document.getElementById(id);
-const escapeHtml = (s) => String(s).replace(/[&<>"']/g, c => ({
-  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
-}[c]));
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 
 function formatTime(ms) {
   if (ms <= 0) return '00:00:00';
   const total = Math.floor(ms / 1000);
-  const h = String(Math.floor(total / 3600)).padStart(2, '0');
-  const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
-  const s = String(total % 60).padStart(2, '0');
-  return `${h}:${m}:${s}`;
+  return `${String(Math.floor(total / 3600)).padStart(2, '0')}:${String(Math.floor((total % 3600) / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
 function getMonthKey() {
@@ -69,8 +54,7 @@ function getMonthKey() {
 function monthKeyToLabel(key) {
   if (!key || !key.includes('-')) return key || '—';
   const [y, m] = key.split('-');
-  const idx = parseInt(m, 10) - 1;
-  return `${MONTH_NAMES[idx] || m} ${y}`;
+  return `${MONTH_NAMES[parseInt(m, 10) - 1] || m} ${y}`;
 }
 
 function weightedCategory() {
@@ -82,11 +66,70 @@ function weightedCategory() {
   return CATEGORY_NAMES[CATEGORY_NAMES.length - 1];
 }
 
+/* ---------- Firebase Leaderboard API ---------- */
+async function fetchScores() {
+  if (!FIREBASE_URL) return {}; // Fallback
+  try {
+    const res = await fetch(`${FIREBASE_URL}/scores/${getMonthKey()}.json`);
+    return await res.json() || {};
+  } catch (e) { console.error('Firebase error:', e); return {}; }
+}
+
+async function updateScore(points) {
+  if (!playerName) return;
+  
+  // Обновляем локально в любом случае (на случай если Firebase не настроен)
+  const month = getMonthKey();
+  const localKey = `roulette-score-${month}`;
+  let localScore = parseInt(localStorage.getItem(localKey) || '0', 10);
+  localScore += points;
+  localStorage.setItem(localKey, localScore);
+  $('my-score-val').textContent = localScore;
+
+  // Обновляем в Firebase
+  if (FIREBASE_URL) {
+    try {
+      const currentDB = await fetchScores();
+      const currentScore = currentDB[playerName] || 0;
+      await fetch(`${FIREBASE_URL}/scores/${month}/${playerName}.json`, {
+        method: 'PUT',
+        body: JSON.stringify(currentScore + points)
+      });
+      loadLeaderboard(); // Перезагружаем таблицу
+    } catch (e) { console.error('Failed to sync score', e); }
+  }
+}
+
+async function loadLeaderboard() {
+  $('current-month-label').textContent = monthKeyToLabel(getMonthKey());
+  
+  let scores = {};
+  if (FIREBASE_URL) {
+    scores = await fetchScores();
+  } else {
+    // Локальный фоллбэк, если Firebase не настроен
+    const localKey = `roulette-score-${getMonthKey()}`;
+    scores[playerName || 'Вы'] = parseInt(localStorage.getItem(localKey) || '0', 10);
+  }
+
+  const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+  $('leaderboard-list').innerHTML = sorted.map(([name, score], i) =>
+    `<li class="${i === 0 ? 'top' : ''}">
+       <span>${i === 0 ? '👑 ' : ''}${escapeHtml(name)}</span>
+       <span class="score">${score}</span>
+     </li>`
+  ).join('') || '<li>Пока пусто</li>';
+  
+  if (playerName) {
+    const localKey = `roulette-score-${getMonthKey()}`;
+    $('my-score-val').textContent = parseInt(localStorage.getItem(localKey) || '0', 10);
+  }
+}
+
 /* ---------- Колесо ---------- */
 function buildCategoryWheel() {
   const wheel = $('category-wheel');
   wheel.innerHTML = '';
-
   const stops = [];
   let acc = 0;
   categorySectors = {};
@@ -107,21 +150,16 @@ function buildCategoryWheel() {
     label.className = 'wheel-label';
     label.style.transform = `rotate(${s.center}deg)`;
     const span = document.createElement('span');
-    span.style.transform = `rotate(${-s.center}deg)`;
-    if (s.span < 40) {
-      span.textContent = CATEGORIES[name].emoji || '•';
-      span.classList.add('wheel-emoji');
-    } else {
-      span.textContent = name;
+    span.style.transform = `rotate(${-s.center}deg)`; // Возвращаем эмодзи в ровное положение
+    if (s.span > 5) { // Если сектор не слишком узкий, показываем эмодзи
+        span.textContent = CATEGORIES[name].emoji;
+        span.classList.add('wheel-emoji');
+        label.appendChild(span);
+        wheel.appendChild(label);
     }
-    label.appendChild(span);
-    wheel.appendChild(label);
   });
 
-  buildLegend();
-}
-
-function buildLegend() {
+  // Легенда
   $('legend').innerHTML = CATEGORY_NAMES.map(name => {
     const pct = (CATEGORIES[name].weight / WEIGHT_TOTAL * 100).toFixed(1);
     return `<span class="legend-item">
@@ -138,10 +176,8 @@ function spinCategory() {
 
   const winner = weightedCategory();
   const s = categorySectors[winner];
-
-  const maxJitter = Math.max(0, s.span / 2 - 8);
-  const jitter = (Math.random() - 0.5) * 2 * maxJitter;
-
+  const jitter = (Math.random() - 0.5) * Math.max(0, s.span - 4); // Джиттер в пределах сектора
+  
   const targetMod  = ((-s.center + jitter) % 360 + 360) % 360;
   const currentMod = ((categoryRotation % 360) + 360) % 360;
   let delta = targetMod - currentMod;
@@ -167,24 +203,16 @@ function spinCategory() {
 async function getItems(category) {
   const cfg = CATEGORIES[category];
   if (cfg.colors) {
-    return Object.entries(cfg.colors).map(([name, hex]) => ({
-      name, hex, isColor: true,
-    }));
+    return Object.entries(cfg.colors).map(([name, hex]) => ({ name, hex, isColor: true }));
   }
   const res = await fetch(cfg.file + '?t=' + Date.now());
-  if (!res.ok) throw new Error(`Не удалось загрузить ${category}`);
+  if (!res.ok) throw new Error(`Ошибка загрузки`);
   const data = await res.json();
-  const arr = Array.isArray(data) ? data : (data.items || []);
-  return arr.map(name => ({ name, isColor: false }));
+  return (Array.isArray(data) ? data : (data.items || [])).map(name => ({ name, isColor: false }));
 }
 
 function renderItem(item) {
-  if (item.isColor) {
-    return `<div class="reel-item color-item">
-      <span class="swatch" style="background:${item.hex}"></span>
-      <span>${escapeHtml(item.name)} дом</span>
-    </div>`;
-  }
+  if (item.isColor) return `<div class="reel-item color-item"><span class="swatch" style="background:${item.hex}"></span><span>${escapeHtml(item.name)} дом</span></div>`;
   return `<div class="reel-item">${escapeHtml(item.name)}</div>`;
 }
 
@@ -197,48 +225,36 @@ async function spinItem() {
   try {
     items = await getItems(selectedCategory);
   } catch (e) {
-    alert('Ошибка загрузки: ' + e.message);
-    spinning = false;
-    $('spin-item').disabled = false;
-    return;
-  }
-  if (!items.length) {
-    alert('Список пуст');
+    alert(e.message);
     spinning = false;
     $('spin-item').disabled = false;
     return;
   }
 
   const winner = items[Math.floor(Math.random() * items.length)];
-
   const VISUAL_SPINS = 30;
   const track = [];
-  for (let i = 0; i < VISUAL_SPINS; i++) {
-    track.push(items[Math.floor(Math.random() * items.length)]);
-  }
+  for (let i = 0; i < VISUAL_SPINS; i++) track.push(items[Math.floor(Math.random() * items.length)]);
   track.push(winner);
 
   const trackEl = $('reel-track');
   trackEl.innerHTML = track.map(renderItem).join('');
-
   trackEl.style.transition = 'none';
   trackEl.style.transform = 'translateY(0)';
   void trackEl.offsetHeight;
 
-  const winnerIdx = track.length - 1;
-  const targetY = (1 - winnerIdx) * REEL_ITEM_H;
+  const targetY = (1 - (track.length - 1)) * REEL_ITEM_H;
   requestAnimationFrame(() => {
     trackEl.style.transition = `transform ${REEL_DURATION_MS}ms cubic-bezier(0.12, 0.75, 0.2, 1)`;
     trackEl.style.transform = `translateY(${targetY}px)`;
   });
 
   await new Promise(resolve => {
-    let done = false;
-    const end = () => { if (!done) { done = true; resolve(); } };
-    trackEl.addEventListener('transitionend', end, { once: true });
-    setTimeout(end, REEL_DURATION_MS + 200);
+    trackEl.addEventListener('transitionend', resolve, { once: true });
+    setTimeout(resolve, REEL_DURATION_MS + 200);
   });
 
+  spinning = false; // СБРОС ФЛАГА (ФИКС БАГА)
   startTask(selectedCategory, winner);
 }
 
@@ -259,16 +275,20 @@ function showResultStage() {
   $('stage-result').classList.remove('hidden');
 
   $('result-category').textContent = activeTask.category;
-
-  const itemEl = $('result-item');
   const item = activeTask.itemData;
-  if (item.isColor) {
-    itemEl.innerHTML = `<span class="swatch swatch-lg" style="background:${item.hex}"></span>${escapeHtml(item.name)} дом`;
-  } else {
-    itemEl.textContent = item.name;
-  }
+  $('result-item').innerHTML = item.isColor 
+    ? `<span class="swatch swatch-lg" style="background:${item.hex}"></span>${escapeHtml(item.name)} дом` 
+    : escapeHtml(item.name);
 
   $('result-rare').classList.toggle('hidden', !CATEGORIES[activeTask.category].rare);
+  
+  // Показываем кнопку перекрута для интерактивных предметов
+  const rerollBtn = $('reroll-btn');
+  if (activeTask.category === 'Интерактивное') {
+    rerollBtn.classList.remove('hidden');
+  } else {
+    rerollBtn.classList.add('hidden');
+  }
 
   updateTimerDisplay();
   if (timerInterval) clearInterval(timerInterval);
@@ -286,10 +306,16 @@ function updateTimerDisplay() {
   if (remaining <= 0) {
     timerEl.textContent = '00:00:00';
     timerEl.classList.add('expired');
-    labelEl.textContent = 'провалено';
+    labelEl.textContent = 'ПРОВАЛ';
+    $('done-btn').disabled = true;
+    $('reroll-btn').classList.add('hidden');
+    
     if (!activeTask.expired) {
       activeTask.expired = true;
       saveActiveTask(activeTask);
+      updateScore(-1); // Минус 1 балл за провал
+      alert('Время вышло! Вы получаете -1 балл.');
+      resetRoulette();
     }
     return;
   }
@@ -304,12 +330,7 @@ function updateTimerDisplay() {
 
 /* ---------- Задача ---------- */
 function startTask(category, itemData) {
-  activeTask = {
-    category,
-    itemData,
-    deadline: Date.now() + DEADLINE_MS,
-    expired: false,
-  };
+  activeTask = { category, itemData, deadline: Date.now() + DEADLINE_MS, expired: false };
   saveActiveTask(activeTask);
   showResultStage();
 }
@@ -319,23 +340,17 @@ function saveActiveTask(task) {
   else localStorage.setItem(STORAGE_KEY, JSON.stringify(task));
 }
 
-function loadActiveTask() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return null;
-  try { return JSON.parse(raw); } catch { return null; }
-}
-
 function completeTask() {
   if (!activeTask) return;
-  const month = getMonthKey();
-  const raw = localStorage.getItem(SCORE_KEY);
-  let score = { month, count: 0 };
-  if (raw) { try { score = JSON.parse(raw); } catch {} }
-  if (score.month !== month) score = { month, count: 0 };
-  score.count += 1;
-  localStorage.setItem(SCORE_KEY, JSON.stringify(score));
+  const points = CATEGORIES[activeTask.category].points || 1;
+  updateScore(points);
+  alert(`✓ Отлично! Вы получаете +${points} балл(ов).`);
+  resetRoulette();
+}
 
-  alert(`✓ Готово! Ваш счёт за месяц: ${score.count}\nНе забудьте обновить leaderboard.json на GitHub.`);
+function rerollTask() {
+  if (!activeTask) return;
+  updateScore(0); // Просто сбрасываем без штрафа
   resetRoulette();
 }
 
@@ -344,72 +359,40 @@ function resetRoulette() {
   activeTask = null;
   selectedCategory = null;
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  
   $('stage-result').classList.add('hidden');
   $('stage-item').classList.add('hidden');
   $('stage-category').classList.remove('hidden');
   $('spin-category').disabled = false;
   $('spin-item').disabled = false;
-  $('reel-track').innerHTML = '';
+  $('done-btn').disabled = false;
+  $('reel-track').innerHTML = '<div class="reel-item">- - -</div><div class="reel-item">ЖМИ КРУТИТЬ</div><div class="reel-item">- - -</div>';
   $('reel-track').style.transform = 'translateY(0)';
 }
 
-/* ---------- Лидерборд и история ---------- */
-function renderPlayers(players) {
-  const sorted = [...(players || [])].sort((a, b) => b.score - a.score);
-  return sorted.map((p, i) =>
-    `<li class="${i === 0 ? 'top' : ''}">
-       <span>${i === 0 ? '👑 ' : ''}${escapeHtml(p.name)}</span>
-       <span class="score">${p.score}</span>
-     </li>`
-  ).join('') || '<li>Пока пусто</li>';
-}
-
-async function loadLeaderboard() {
-  try {
-    const res = await fetch('leaderboard.json?t=' + Date.now());
-    const data = await res.json();
-
-    // Текущий месяц
-    const current = data.current || { month: getMonthKey(), players: [] };
-    $('current-month-label').textContent = monthKeyToLabel(current.month);
-    $('leaderboard-list').innerHTML = renderPlayers(current.players);
-
-    // Архив
-    const history = data.history || [];
-    const historyEl = $('history-list');
-    if (!history.length) {
-      historyEl.innerHTML = '<p class="history-empty">Пока нет прошлых месяцев</p>';
-    } else {
-      const sorted = [...history].sort((a, b) =>
-        (b.month || '').localeCompare(a.month || '')
-      );
-      historyEl.innerHTML = sorted.map(h => `
-        <div class="history-month">
-          <h3>${monthKeyToLabel(h.month)}</h3>
-          <ul>${renderPlayers(h.players)}</ul>
-        </div>
-      `).join('');
-    }
-  } catch (e) {
-    $('leaderboard-list').innerHTML = '<li style="color:#6b7280">Не удалось загрузить лидерборд</li>';
-    $('history-list').innerHTML = '';
-  }
-}
-
 /* ---------- Инициализация ---------- */
-function init() {
+async function init() {
+  // Запрос имени, если его нет
+  if (!playerName) {
+    playerName = prompt('Введите ваше имя для таблицы лидеров:');
+    if (playerName) localStorage.setItem(NAME_KEY, playerName);
+    else playerName = 'Аноним';
+  }
+
   buildCategoryWheel();
   $('spin-category').addEventListener('click', spinCategory);
   $('spin-item').addEventListener('click', spinItem);
   $('done-btn').addEventListener('click', completeTask);
-  $('restart-btn').addEventListener('click', resetRoulette);
+  $('reroll-btn').addEventListener('click', rerollTask);
 
-  loadLeaderboard();
+  await loadLeaderboard();
 
-  const saved = loadActiveTask();
+  const saved = localStorage.getItem(STORAGE_KEY);
   if (saved) {
-    activeTask = saved;
-    showResultStage();
+    try {
+      activeTask = JSON.parse(saved);
+      showResultStage();
+    } catch {}
   }
 }
 

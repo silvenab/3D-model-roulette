@@ -41,15 +41,11 @@ header p { color: #9ca3af; font-size: 0.9rem; }
 /* Иконки на колесе */
 .wheel-icon {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  margin-top: -0.9rem; /* половина высоты эмодзи (примерно) */
-  margin-left: -0.9rem; /* половина ширины эмодзи */
+  transform: translate(-50%, -50%); /* Центрируем ровно по координатам left/top */
   font-size: 1.8rem; 
   text-shadow: 0 2px 6px rgba(0,0,0,0.8);
   pointer-events: none; 
   z-index: 2;
-  transform-origin: center center;
 }
 
 .pointer {

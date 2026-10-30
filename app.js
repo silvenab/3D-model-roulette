@@ -135,17 +135,20 @@ function buildCategoryWheel() {
   });
   wheel.style.background = `conic-gradient(from 0deg, ${stops.join(', ')})`;
 
-  // Позиционирование иконок через transform (надёжнее, чем left/top)
-  const radiusPercent = 36; // Отступ от центра
+  // Математически точное позиционирование иконок
+  const radiusPercent = 36; // Радиус от центра колеса (36% от ширины)
   
   CATEGORY_NAMES.forEach(name => {
     const s = categorySectors[name];
-    // Показываем иконку, если сектор достаточно широкий (чтобы не наезжали друг на друга)
-    if (s.span > 15) {
+    if (s.span > 15) { // Показываем иконку, если сектор достаточно широкий
+      const angleRad = (s.center - 90) * Math.PI / 180; // -90, чтобы 0 градусов был сверху
+      const x = 50 + radiusPercent * Math.cos(angleRad);
+      const y = 50 + radiusPercent * Math.sin(angleRad);
+      
       const icon = document.createElement('div');
       icon.className = 'wheel-icon';
-      // Поворачиваем на угол сектора, сдвигаем от центра и возвращаем ориентацию
-      icon.style.transform = `rotate(${s.center}deg) translateY(-${radiusPercent}%) rotate(${-s.center}deg)`;
+      icon.style.left = `${x}%`;
+      icon.style.top = `${y}%`;
       icon.textContent = CATEGORIES[name].emoji;
       wheel.appendChild(icon);
     }

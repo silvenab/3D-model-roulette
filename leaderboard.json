@@ -1,0 +1,10 @@
+{
+  "current": {
+    "month": "2025-10",
+    "players": [
+      { "name": "Alice", "score": 0 },
+      { "name": "Bob", "score": 0 }
+    ]
+  },
+  "history": []
+}

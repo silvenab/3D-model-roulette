@@ -5,19 +5,10 @@ const FIREBASE_URL = "https://d-model-roulette-default-rtdb.europe-west1.firebas
 
 /* =========================================================================
    ⚙️ ГЛАВНАЯ НАСТРОЙКА КАТЕГОРИЙ И ТАЙМЕРОВ
-   =========================================================================
-   timer:   Время до дедлайна в ЧАСАХ (сколько всего дается на модель)
-   minTime: Минимальное время в МИНУТАХ (сколько должно пройти, чтобы 
-            разблокировались кнопки "ГОТОВО")
-   points:  Баллы за модель с текстурами
-   noTexPoints: Баллы за модель без текстур
    ========================================================================= */
 const CATEGORIES = {
   'Строения':      { color: '#ff7a45', weight: 50,  emoji: '🏚️', rare: true, 
-      points: 6, 
-      noTexPoints: 3, 
-      minTime: 30,  // <--- Минимум 30 минут
-      timer: 12,    // <--- Дедлайн 12 часов
+      points: 6, noTexPoints: 3, minTime: 30, timer: 12, 
       colors: {
         'Белый': '#f8fafc', 'Бежевый': '#e8d5b7', 'Песочный': '#d4b896', 'Терракотовый': '#b8694a',
         'Красный': '#b91c1c', 'Коричневый': '#7c4a2d', 'Серый': '#64748b', 'Тёмно-серый': '#334155',
@@ -25,35 +16,21 @@ const CATEGORIES = {
       }
   },
   'Природа':       { color: '#4ade80', weight: 150, emoji: '🌿', file: 'data/nature.json', 
-      points: 2, 
-      noTexPoints: 1, 
-      minTime: 5,   // <--- Минимум 5 минут
-      timer: 12     // <--- Дедлайн 12 часов
+      points: 2, noTexPoints: 1, minTime: 5, timer: 12 
   },
   'Предметы':      { color: '#60a5fa', weight: 499, emoji: '📦', file: 'data/items.json', 
-      points: 2, 
-      noTexPoints: 1, 
-      minTime: 5,   // <--- Минимум 5 минут
-      timer: 12     // <--- Дедлайн 12 часов
+      points: 2, noTexPoints: 1, minTime: 5, timer: 12 
   },
   'Интерактивное': { color: '#c084fc', weight: 1,   emoji: '⚡', file: 'data/interactive.json', 
-      points: 20, 
-      noTexPoints: 20, 
-      minTime: 60,  // <--- Минимум 60 минут (1 час)
-      timer: 24     // <--- Дедлайн 24 часа
+      points: 20, noTexPoints: 20, minTime: 60, timer: 24 
   },
   'Пропы':         { color: '#fbbf24', weight: 300, emoji: '🪑', file: 'data/props.json', 
-      points: 2, 
-      noTexPoints: 1, 
-      minTime: 5,   // <--- Минимум 5 минут
-      timer: 12     // <--- Дедлайн 12 часов
+      points: 2, noTexPoints: 1, minTime: 5, timer: 12 
   },
 };
-/* ========================================================================= */
 
 const CATEGORY_NAMES = Object.keys(CATEGORIES);
 const WEIGHT_TOTAL = CATEGORY_NAMES.reduce((s, n) => s + CATEGORIES[n].weight, 0);
-
 const MONTH_NAMES = ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
 const SPIN_DURATION_MS = 5000;
 const REEL_DURATION_MS = 4000;
@@ -244,7 +221,6 @@ async function getItems(category) {
     items = names.map(name => ({ name, isColor: false }));
   }
 
-  // Фильтруем уже выполненные
   const completedTex = JSON.parse(localStorage.getItem(COMPLETED_TEX) || '[]');
   const completedNotex = JSON.parse(localStorage.getItem(COMPLETED_NOTEX) || '[]');
   
@@ -263,48 +239,46 @@ async function spinItem() {
   spinning = true;
   $('spin-item').disabled = true;
 
-  let items;
   try {
-    items = await getItems(selectedCategory);
+    let items = await getItems(selectedCategory);
+
+    if (items.length === 0) {
+      alert('В этой категории больше не осталось доступных предметов! (Все сделаны)');
+      spinning = false;
+      $('spin-item').disabled = false;
+      return;
+    }
+
+    const winner = items[Math.floor(Math.random() * items.length)];
+    const VISUAL_SPINS = 30;
+    const track = [];
+    for (let i = 0; i < VISUAL_SPINS; i++) track.push(items[Math.floor(Math.random() * items.length)]);
+    track.push(winner);
+
+    const trackEl = $('reel-track');
+    trackEl.innerHTML = track.map(renderItem).join('');
+    trackEl.style.transition = 'none';
+    trackEl.style.transform = 'translateY(0)';
+    void trackEl.offsetHeight;
+
+    const targetY = (1 - (track.length - 1)) * REEL_ITEM_H;
+    requestAnimationFrame(() => {
+      trackEl.style.transition = `transform ${REEL_DURATION_MS}ms cubic-bezier(0.12, 0.75, 0.2, 1)`;
+      trackEl.style.transform = `translateY(${targetY}px)`;
+    });
+
+    await new Promise(resolve => {
+      trackEl.addEventListener('transitionend', resolve, { once: true });
+      setTimeout(resolve, REEL_DURATION_MS + 200);
+    });
+
+    startTask(selectedCategory, winner);
   } catch (e) {
     alert(e.message);
+  } finally {
     spinning = false;
     $('spin-item').disabled = false;
-    return;
   }
-
-  if (items.length === 0) {
-    alert('В этой категории больше не осталось доступных предметов! (Все сделаны)');
-    spinning = false;
-    $('spin-item').disabled = false;
-    return;
-  }
-
-  const winner = items[Math.floor(Math.random() * items.length)];
-  const VISUAL_SPINS = 30;
-  const track = [];
-  for (let i = 0; i < VISUAL_SPINS; i++) track.push(items[Math.floor(Math.random() * items.length)]);
-  track.push(winner);
-
-  const trackEl = $('reel-track');
-  trackEl.innerHTML = track.map(renderItem).join('');
-  trackEl.style.transition = 'none';
-  trackEl.style.transform = 'translateY(0)';
-  void trackEl.offsetHeight;
-
-  const targetY = (1 - (track.length - 1)) * REEL_ITEM_H;
-  requestAnimationFrame(() => {
-    trackEl.style.transition = `transform ${REEL_DURATION_MS}ms cubic-bezier(0.12, 0.75, 0.2, 1)`;
-    trackEl.style.transform = `translateY(${targetY}px)`;
-  });
-
-  await new Promise(resolve => {
-    trackEl.addEventListener('transitionend', resolve, { once: true });
-    setTimeout(resolve, REEL_DURATION_MS + 200);
-  });
-
-  spinning = false;
-  startTask(selectedCategory, winner);
 }
 
 /* ---------- Этапы ---------- */
@@ -354,12 +328,9 @@ function updateTimerDisplay() {
   const elapsed = now - activeTask.startTime;
   
   const catCfg = CATEGORIES[activeTask.category];
-  
-  // Перевод минут в миллисекунды для проверки minTime
   const minMs = (catCfg.minTime || 0) * 60 * 1000; 
   const isReady = elapsed >= minMs;
 
-  // Блокируем кнопки, пока не прошло minTime
   $('done-btn').disabled = !isReady;
   $('done-notex-btn').disabled = !isReady;
 
@@ -374,7 +345,6 @@ function updateTimerDisplay() {
 
   timerEl.classList.remove('warning', 'danger', 'expired');
 
-  // Если вышло общее время (timer)
   if (remaining <= 0) {
     timerEl.textContent = '00:00:00';
     timerEl.classList.add('expired');
@@ -403,7 +373,6 @@ function updateTimerDisplay() {
 
 /* ---------- Задача ---------- */
 function startTask(category, itemData) {
-  // Перевод часов в миллисекунды для дедлайна
   const hours = CATEGORIES[category].timer || 12;
   activeTask = { 
     category, 
@@ -426,7 +395,6 @@ function completeTask(noTexture = false) {
   const cat = CATEGORIES[activeTask.category];
   const points = noTexture ? cat.noTexPoints : cat.points;
 
-  // Добавляем в списки выполненных
   const key = noTexture ? COMPLETED_NOTEX : COMPLETED_TEX;
   const list = JSON.parse(localStorage.getItem(key) || '[]');
   if (!list.includes(activeTask.itemData.name)) {
@@ -435,7 +403,7 @@ function completeTask(noTexture = false) {
   }
 
   updateScore(points);
-  renderCompletedLists(); // Обновляем UI списков
+  renderCompletedLists();
   alert(`✓ Отлично! Вы получаете +${points} балл(ов).`);
   resetRoulette();
 }
@@ -462,30 +430,39 @@ function resetRoulette() {
 
 /* ---------- Инициализация ---------- */
 async function init() {
-  if (!playerName) {
-    playerName = prompt('Введите ваше имя для таблицы лидеров:');
-    if (playerName) localStorage.setItem(NAME_KEY, playerName);
-    else playerName = 'Аноним';
-  }
+  try {
+    if (!playerName) {
+      playerName = prompt('Введите ваше имя для таблицы лидеров:');
+      if (playerName) localStorage.setItem(NAME_KEY, playerName);
+      else playerName = 'Аноним';
+    }
 
-  buildCategoryWheel();
-  renderCompletedLists();
-  
-  $('spin-category').addEventListener('click', spinCategory);
-  $('spin-item').addEventListener('click', spinItem);
-  $('done-btn').addEventListener('click', () => completeTask(false));
-  $('done-notex-btn').addEventListener('click', () => completeTask(true));
-  $('reroll-btn').addEventListener('click', rerollTask);
-  $('reset-completed-btn').addEventListener('click', resetCompleted);
+    buildCategoryWheel();
+    renderCompletedLists();
+    
+    $('spin-category').addEventListener('click', spinCategory);
+    $('spin-item').addEventListener('click', spinItem);
+    $('done-btn').addEventListener('click', () => completeTask(false));
+    $('done-notex-btn').addEventListener('click', () => completeTask(true));
+    $('reroll-btn').addEventListener('click', rerollTask);
+    $('reset-completed-btn').addEventListener('click', resetCompleted);
 
-  await loadLeaderboard();
-
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved) {
+    // Оборачиваем в try-catch, чтобы проблемы с Firebase не ломали инициализацию
     try {
-      activeTask = JSON.parse(saved);
-      showResultStage();
-    } catch {}
+      await loadLeaderboard();
+    } catch (e) {
+      console.warn('Лидерборд не загрузился:', e);
+    }
+
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        activeTask = JSON.parse(saved);
+        showResultStage();
+      } catch {}
+    }
+  } catch (e) {
+    console.error('Критическая ошибка инициализации:', e);
   }
 }
 

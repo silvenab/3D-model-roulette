@@ -105,7 +105,6 @@ async function loadLeaderboard() {
   $('current-month-label').textContent = monthKeyToLabel(getMonthKey());
   const scores = await fetchScores();
   
-  // В локальном режиме "Мой счет" всегда синхронизирован с таблицей
   if (!FIREBASE_URL && playerName) {
      $('my-score-val').textContent = scores[playerName] || 0;
   }
@@ -137,19 +136,23 @@ function buildCategoryWheel() {
   });
   wheel.style.background = `conic-gradient(from 0deg, ${stops.join(', ')})`;
 
+  // Вместо CSS rotate используем математику для точного позиционирования
+  const radiusPercent = 38; // 38% от радиуса колеса
+  
   CATEGORY_NAMES.forEach(name => {
     const s = categorySectors[name];
-    // Скрываем эмодзи, если сектор меньше 15 градусов (например, Интерактив 0.1%)
-    if (s.span > 15) {
-      const label = document.createElement('div');
-      label.className = 'wheel-label';
-      label.style.transform = `rotate(${s.center}deg)`;
-      const span = document.createElement('span');
-      span.style.transform = `rotate(${-s.center}deg)`; 
-      span.textContent = CATEGORIES[name].emoji;
-      span.classList.add('wheel-emoji');
-      label.appendChild(span);
-      wheel.appendChild(label);
+    // Показываем иконку, если сектор достаточно широкий (чтобы не наезжали друг на друга)
+    if (s.span > 20) {
+      const angleRad = (s.center - 90) * Math.PI / 180;
+      const x = 50 + radiusPercent * Math.cos(angleRad);
+      const y = 50 + radiusPercent * Math.sin(angleRad);
+      
+      const icon = document.createElement('div');
+      icon.className = 'wheel-icon';
+      icon.style.left = `${x}%`;
+      icon.style.top = `${y}%`;
+      icon.textContent = CATEGORIES[name].emoji;
+      wheel.appendChild(icon);
     }
   });
 
@@ -300,7 +303,6 @@ function updateTimerDisplay() {
   const minMs = (catCfg.minTime || 0) * 60 * 1000; // Время в минутах переводим в миллисекунды
   const isReady = elapsed >= minMs;
 
-  // Блокировка кнопок готовности
   $('done-btn').disabled = !isReady;
   $('done-notex-btn').disabled = !isReady;
 
@@ -366,7 +368,6 @@ function completeTask(noTexture = false) {
   const points = noTexture ? cat.noTexPoints : cat.points;
 
   if (noTexture) {
-    // Сохраняем в отдельный список "Без текстур"
     const key = `roulette-notex-${getMonthKey()}`;
     const list = JSON.parse(localStorage.getItem(key) || '[]');
     list.push({
